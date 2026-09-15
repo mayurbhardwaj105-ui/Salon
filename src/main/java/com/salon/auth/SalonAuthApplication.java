@@ -1,0 +1,11 @@
+package com.salon.auth;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SalonAuthApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SalonAuthApplication.class, args);
+    }
+}
