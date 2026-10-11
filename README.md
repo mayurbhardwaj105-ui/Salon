@@ -1,57 +1,60 @@
 # Salon Customer Registration & JWT Authentication System
 
-Spring Boot + MySQL backend for a salon's customer registration and login,
-using JSON Web Tokens (JWT) stored in an HTTP-only cookie for session
-management.
+FastAPI + MySQL backend for a salon management platform's customer registration and login.
+On login it issues a signed JSON Web Token (JWT) and stores it in an HTTP-only cookie, so
+sessions work across requests without any server-side session state.
 
-**Tech stack:** Java, Spring Boot, JWT, MySQL
+**Tech stack:** Python, FastAPI, PyJWT, SQLAlchemy, MySQL
 
 ## How it works
 
-1. **Register** (`POST /api/auth/register`) — creates a customer record;
-   the password is hashed with BCrypt before it's ever stored.
-2. **Login** (`POST /api/auth/login`) — verifies credentials, generates a
-   signed JWT (HS256) containing the customer's email + id, and sets it
-   as an `HttpOnly`, `Secure`, `SameSite=Strict` cookie named
-   `auth_token`. The token is never returned in the JSON body, only the
-   cookie — this keeps it out of reach of JavaScript (mitigates XSS
-   token theft).
-3. **Protected routes** (anything under `/api/customer/**`) — a
-   `HandlerInterceptor` (`JwtAuthInterceptor`) runs before the
-   controller, reads the `auth_token` cookie, validates the JWT
-   signature + expiry, and rejects the request with `401` if it's
-   missing or invalid. If valid, it attaches the customer's email/id to
-   the request so controllers can use it.
+1. **Register** (`POST /api/auth/register`) — validates the input, creates a customer record,
+   and stores a bcrypt hash of the password, never the password itself. Duplicate emails
+   return `409`.
+2. **Login** (`POST /api/auth/login`) — verifies credentials, generates a signed JWT (HS256)
+   containing the customer's email and id, and sets it as an `HttpOnly`, `Secure`,
+   `SameSite=Strict` cookie named `auth_token`. The token is never returned in the JSON body,
+   which keeps it out of reach of JavaScript (mitigates XSS token theft).
+3. **Protected routes** (anything under `/api/customer/**`) — a FastAPI dependency
+   (`get_current_customer`) reads the `auth_token` cookie, verifies the JWT signature and
+   expiry, loads the customer, and rejects the request with `401` if the token is missing,
+   invalid, or expired.
 4. **Logout** (`POST /api/auth/logout`) — clears the cookie.
 
 ## Project structure
 
 ```
-src/main/java/com/salon/auth/
-├── SalonAuthApplication.java     # entry point
-├── model/Customer.java           # JPA entity
-├── repository/CustomerRepository.java
-├── dto/RegisterRequest.java      # + validation annotations
-├── dto/LoginRequest.java
-├── security/JwtUtil.java         # token generation/validation (jjwt)
-├── security/JwtAuthInterceptor.java   # reads/validates the cookie
-├── config/WebConfig.java         # wires the interceptor to /api/customer/**
-├── controller/AuthController.java     # register/login/logout
-└── controller/CustomerController.java # example protected endpoint
+app/
+├── main.py              # FastAPI app, creates tables on startup
+├── config.py            # settings from environment variables
+├── database.py          # SQLAlchemy engine/session
+├── models.py            # Customer table
+├── schemas.py           # request validation (email, password length, etc.)
+├── security.py          # bcrypt, JWT create/verify, cookie auth dependency
+└── routers/
+    ├── auth.py          # register / login / logout
+    └── customer.py      # example protected endpoint
+tests/test_auth.py       # registration, login, cookie and protected-route tests
 ```
 
 ## Setup
 
-1. Create a MySQL database (or let `createDatabaseIfNotExist=true` in
-   `application.properties` do it for you).
-2. Update `src/main/resources/application.properties` with your MySQL
-   credentials.
-3. **Important:** change `jwt.secret` to a long, random value before
-   deploying anywhere real — never use the placeholder in production.
+1. Create a MySQL database (for example `CREATE DATABASE salon_db;`). The `customers` table is
+   created automatically on startup.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Copy `.env.example` to `.env`, then set your MySQL credentials in `DATABASE_URL` and a long
+   random `JWT_SECRET` (the app refuses to issue tokens without one):
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
 4. Run:
    ```bash
-   mvn spring-boot:run
+   uvicorn app.main:app --reload --port 8080
    ```
+   Interactive API docs are at http://localhost:8080/docs.
 
 ## Try it
 
@@ -70,12 +73,17 @@ curl -c cookies.txt -X POST http://localhost:8080/api/auth/login \
 curl -b cookies.txt http://localhost:8080/api/customer/profile
 ```
 
+## Tests
+
+```bash
+pytest
+```
+
+The tests use a temporary SQLite database, so MySQL isn't needed to run them.
+
 ## Notes
 
-- `cookie.setSecure(true)` means the cookie is only sent over HTTPS. Set
-  it to `false` temporarily if you're testing over plain `http://localhost`
-  and your browser/client refuses to store it.
-- This project skips the full `spring-security` filter chain on purpose
-  (just `spring-security-crypto` for BCrypt) to keep the JWT/cookie flow
-  easy to follow. For a production system, consider migrating to a proper
-  `SecurityFilterChain` with role-based access control as the app grows.
+- The cookie is `Secure`, so it is only sent over HTTPS. For plain `http://localhost` testing
+  set `COOKIE_SECURE=false` in `.env` (curl and browsers otherwise won't send it back).
+- `JWT_SECRET` and database credentials come from environment variables, so keep `.env` out of
+  version control (it is in `.gitignore`).
