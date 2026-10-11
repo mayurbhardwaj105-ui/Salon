@@ -4,6 +4,8 @@ Spring Boot + MySQL backend for a salon's customer registration and login,
 using JSON Web Tokens (JWT) stored in an HTTP-only cookie for session
 management.
 
+**Tech stack:** Java, Spring Boot, JWT, MySQL
+
 ## How it works
 
 1. **Register** (`POST /api/auth/register`) — creates a customer record;
